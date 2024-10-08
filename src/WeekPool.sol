@@ -2,11 +2,13 @@
 pragma solidity ^0.8.13;
 
 import {Token} from "./Token.sol";
+import {ECDSA} from "solady/utils/ECDSA.sol";
 
 contract WeekPool {
     uint256 private _week;
     uint256 private _totalPoints;
     Token private _token;
+    uint256 private _tokens;
 
     address private _signer;
 
@@ -16,11 +18,12 @@ contract WeekPool {
     bytes32 private constant SOME_TYPE_HASH = keccak256("BaselineRequest(uint256 vehicleId,address owner,uint256 week,uint256 points)");
     
 
-    constructor(address token, uint256 week, uint256 totalPoints, address signer) {
+    constructor(address token, uint256 week, uint256 totalPoints, address signer, uint256 tokens) {
         _token = Token(token);
         _week = week;
         _totalPoints = totalPoints;
         _signer = signer;
+        _tokens = tokens;
     }
 
     function claim(bytes calldata data) external {
@@ -34,8 +37,16 @@ contract WeekPool {
 
         (uint256 vehicleId, address owner, uint256 week, uint256 points, bytes memory signature) =  abi.decode(data, (uint256, address, uint256, uint256, bytes));
 
+        require(!_claimed[vehicleId], "Already claimed");
+        require(_week == week, "Wrong week");
+
         bytes32 structHash = keccak256(abi.encode(SOME_TYPE_HASH, vehicleId, owner, week, points));
         bytes32 fullHash = keccak256(abi.encodePacked("\x19\x01", DOMAIN_SEPARATOR, structHash));
-        
+
+        require(ECDSA.recover(fullHash, signature) == _signer, "Wrong signer");
+
+        _claimed[vehicleId] = true;
+
+       require(_token.transfer(owner, (_tokens * points) / _totalPoints), "Transfer failed");
     }
 }
